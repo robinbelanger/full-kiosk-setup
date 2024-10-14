@@ -2,7 +2,7 @@
 
 # Step 1: Update the system and install required packages
 sudo apt update && sudo apt upgrade -y
-sudo apt install --no-install-recommends xserver-xorg x11-xserver-utils xinit openbox chromium-browser unclutter python3-flask -y
+sudo apt install --no-install-recommends xserver-xorg x11-xserver-utils xinit openbox chromium-browser unclutter python3-flask realvnc-vnc-server -y
 
 # Step 2: Create the kiosk script
 cat <<EOL > /home/pi/kiosk.sh
@@ -35,7 +35,12 @@ if [ -z "\$DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
 fi
 EOL
 
-# Step 6: Create the Kiosk Admin Panel using Flask
+# Step 6: Enable and configure Raspberry Pi Connect (VNC)
+sudo raspi-config nonint do_vnc 0  # Enable VNC server
+sudo systemctl enable vncserver-x11-serviced  # Ensure VNC starts on boot
+sudo systemctl start vncserver-x11-serviced
+
+# Step 7: Create the Kiosk Admin Panel using Flask
 
 # Create the Flask app directory
 mkdir -p /home/pi/kiosk-admin/templates
@@ -155,7 +160,7 @@ cat <<EOL > /home/pi/kiosk-admin/templates/index.html
 </html>
 EOL
 
-# Step 7: Create a systemd service to run Flask on boot
+# Step 8: Create a systemd service to run Flask on boot
 cat <<EOL > /etc/systemd/system/kiosk-admin.service
 [Unit]
 Description=Kiosk Admin Web Interface
@@ -175,5 +180,5 @@ EOL
 sudo systemctl enable kiosk-admin
 sudo systemctl start kiosk-admin
 
-# Step 8: Reboot to apply all changes
+# Step 9: Reboot to apply all changes
 sudo reboot
