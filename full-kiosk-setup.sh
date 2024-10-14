@@ -1,11 +1,15 @@
 #!/bin/bash
 
-# Step 1: Update the system and install required packages
+# Step 1: Detect the current user and home directory
+USER_HOME=$(eval echo ~$SUDO_USER)
+
+# Step 2: Update the system and install required packages
 sudo apt update && sudo apt upgrade -y
 sudo apt install --no-install-recommends xserver-xorg x11-xserver-utils xinit openbox chromium-browser unclutter python3-flask realvnc-vnc-server -y
 
-# Step 2: Create the kiosk script
-cat <<EOL > /home/pi/kiosk.sh
+# Step 3: Create the kiosk script (ensure the home directory exists)
+mkdir -p "$USER_HOME"
+cat <<EOL > "$USER_HOME/kiosk.sh"
 #!/bin/bash
 xset -dpms       # Disable Energy Star features
 xset s off       # Disable screensaver
@@ -19,41 +23,43 @@ chromium-browser --noerrdialogs --kiosk --disable-restore-session-state --disabl
 EOL
 
 # Make kiosk script executable
-chmod +x /home/pi/kiosk.sh
+chmod +x "$USER_HOME/kiosk.sh"
 
-# Step 3: Configure Openbox to run the kiosk script at startup
-mkdir -p /home/pi/.config/openbox
-echo "/home/pi/kiosk.sh &" >> /home/pi/.config/openbox/autostart
+# Step 4: Configure Openbox to run the kiosk script at startup (ensure Openbox config directory exists)
+mkdir -p "$USER_HOME/.config/openbox"
+echo "$USER_HOME/kiosk.sh &" >> "$USER_HOME/.config/openbox/autostart"
 
-# Step 4: Enable auto-login for the pi user
+# Step 5: Enable auto-login for the current user
 sudo raspi-config nonint do_boot_behaviour B4
 
-# Step 5: Set up .bash_profile to start the X server automatically on login
-cat <<EOL >> /home/pi/.bash_profile
+# Step 6: Set up .bash_profile to start the X server automatically on login
+if [ ! -f "$USER_HOME/.bash_profile" ]; then
+  cat <<EOL >> "$USER_HOME/.bash_profile"
 if [ -z "\$DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
   startx
 fi
 EOL
+fi
 
-# Step 6: Enable and configure Raspberry Pi Connect (VNC)
+# Step 7: Enable and configure Raspberry Pi Connect (VNC)
 sudo raspi-config nonint do_vnc 0  # Enable VNC server
 sudo systemctl enable vncserver-x11-serviced  # Ensure VNC starts on boot
 sudo systemctl start vncserver-x11-serviced
 
-# Step 7: Create the Kiosk Admin Panel using Flask
+# Step 8: Create the Kiosk Admin Panel using Flask
 
-# Create the Flask app directory
-mkdir -p /home/pi/kiosk-admin/templates
+# Create the Flask app directory (ensure it exists)
+mkdir -p "$USER_HOME/kiosk-admin/templates"
 
 # Create the Flask app Python script (app.py)
-cat <<EOL > /home/pi/kiosk-admin/app.py
+cat <<EOL > "$USER_HOME/kiosk-admin/app.py"
 from flask import Flask, render_template, request, redirect, url_for
 import os
 
 app = Flask(__name__)
 
 # Path to the kiosk script
-KIOSK_SCRIPT = "/home/pi/kiosk.sh"
+KIOSK_SCRIPT = "$USER_HOME/kiosk.sh"
 WPA_SUPPLICANT_FILE = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
 # Render the admin page
@@ -120,7 +126,7 @@ if __name__ == '__main__':
 EOL
 
 # Create the HTML template for the admin page
-cat <<EOL > /home/pi/kiosk-admin/templates/index.html
+cat <<EOL > "$USER_HOME/kiosk-admin/templates/index.html"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,16 +166,16 @@ cat <<EOL > /home/pi/kiosk-admin/templates/index.html
 </html>
 EOL
 
-# Step 8: Create a systemd service to run Flask on boot
-cat <<EOL > /etc/systemd/system/kiosk-admin.service
+# Step 9: Create a systemd service to run Flask on boot
+sudo tee /etc/systemd/system/kiosk-admin.service > /dev/null <<EOL
 [Unit]
 Description=Kiosk Admin Web Interface
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/kiosk-admin/app.py
-WorkingDirectory=/home/pi/kiosk-admin
-User=pi
+ExecStart=/usr/bin/python3 $USER_HOME/kiosk-admin/app.py
+WorkingDirectory=$USER_HOME/kiosk-admin
+User=$SUDO_USER
 Restart=always
 
 [Install]
@@ -180,5 +186,5 @@ EOL
 sudo systemctl enable kiosk-admin
 sudo systemctl start kiosk-admin
 
-# Step 9: Reboot to apply all changes
+# Step 10: Reboot to apply all changes
 sudo reboot
